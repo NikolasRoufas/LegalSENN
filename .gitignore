@@ -1,0 +1,37 @@
+
+---
+
+## 🗂 `.gitignore`
+
+Create a file named `.gitignore` in the project root with:
+
+```gitignore
+# Python cache / compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+venv/
+.env/
+
+# MacOS
+.DS_Store
+
+# Jupyter / IDE stuff
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+# Data and outputs (regenerate as needed)
+data/lexglue_csv/
+outputs/
+
+# Logs
+*.log
+
+# Hugging Face / transformers cache
+huggingface/
+.cache/
