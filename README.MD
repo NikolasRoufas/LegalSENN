@@ -232,6 +232,5 @@ This codebase is:
 * **Property of**: *Nikolaos Roufas* and *Sapienza Università di Roma*
 * **Status**: *Proprietary (all rights reserved)*
 
-Unless you explicitly add a public license (e.g., *MIT*, *Apache-2.0*),
 **this code must not be redistributed, modified, or used commercially**
 without prior written permission.
