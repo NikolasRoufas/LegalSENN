@@ -1,236 +1,257 @@
+# LegalSENN
 
-# **LegalSENN: Self-Explaining Neural Networks for Legal Text Classification**
+**Self-Explaining Transformer Models for Interpretable Legal Document Classification**
 
-> **Property of**  
-> **Nikolaos Roufas**  
-> **Sapienza Università di Roma**  
-> **All rights reserved.**  
-> This codebase is proprietary and may not be redistributed or used without explicit permission from the author and Sapienza University.
+This repository contains the implementation for the paper:
 
----
+> Nikolaos Roufas, Matteo Marinacci, Andreas Kanavos, and Massimo Mecella.
+> *Self-Explaining Transformer Models for Interpretable Legal Document Classification.*
 
-## **Overview**
+LegalSENN is a transformer-based legal document classifier designed to produce both predictions and concept-level explanations during the model's own forward computation. The model follows the Self-Explaining Neural Network (SENN) idea: instead of applying a post-hoc explanation method after prediction, it exposes a compact set of learned concepts and uses an additive decision mechanism to show how those concepts contribute to the final class score.
 
-**LegalSENN** is an interpretable neural architecture for legal text classification.  
-It combines:
+The current implementation targets legal text classification with LexGLUE-style CSV files and includes utilities for training, batch inference, single-document inference, and explanation evaluation.
 
-- a **pretrained Transformer encoder** (e.g., *Legal-BERT*), and  
-- a **Self-Explaining Neural Network (SENN) head**
+## Overview
 
-to produce **both predictions and explanations** for legal documents.
+LegalSENN combines:
 
-The primary use case is training on **LexGLUE** tasks (e.g., *SCOTUS*, *EURLEX*) and generating:
+- a pretrained transformer encoder, such as `nlpaueb/legal-bert-base-uncased`;
+- a concept bottleneck layer that maps the document representation into learned concepts;
+- a relevance network that estimates concept relevance for the input document;
+- an additive classifier that produces logits from concept contributions.
 
-- **jurisdiction / issue-area predictions**
-- **concept-based explanations**  
-  for a user-uploaded trial or judgment.
+For an input document `x`, the model computes:
 
----
-
-## **Core Ideas**
-
-Given an input document \(x\), LegalSENN computes:
-
-1. **Document representation**  
-   \( z(x) \) from a pretrained encoder (e.g., Legal-BERT).
-
-2. **Concept activations**  
-   \( h_i(x) \) via a linear *concept encoder*.
-
-3. **Relevance scores**  
-   \( \alpha_i(x) \) via an MLP *relevance predictor*.
-
-4. **Concept contributions**  
-   \[
-   c_i(x) = h_i(x) \cdot \alpha_i(x)
-   \]
-
-5. **Final classifier**  
-   \[
-   f(x) = W_g \, c(x) + b_g
-   \]
-
-This architecture follows **Self-Explaining Neural Networks (SENNs)**  
-by *Alvarez-Melis & Jaakkola (2018)*, adapted to the domain of legal text classification.
-
----
-
-## **Repository Structure**
-
-Flat project layout:
-
+```text
+z(x)  = transformer document representation
+h(x)  = concept activations
+a(x)  = concept relevances
+c(x)  = h(x) * a(x)
+logits = W c(x) + b
 ```
 
-Self-Explainable-Neural-Networks/
-│
-├─ model.py                  # LegalSENN architecture (encoder + SENN head)
-├─ data.py                   # Dataset + label map utilities
-├─ train.py                  # Training loop for LexGLUE CSVs
-├─ inference.py              # Inference + explanation on a single document
-├─ prepare_lexglue_csv.py    # Convert LexGLUE subsets to text,label CSVs
-├─ requirements.txt          # Python dependencies
-│
-├─ data/
-│   └─ lexglue_csv/          # Generated CSVs (train/val/test per task)
-│
-├─ outputs/
-│   └─ legal_senn_*          # Saved models, configs, label maps
-│
-└─ venv/                     # Python virtual environment (ignored by git)
+The vector `c(x)` is used directly by the classifier, so concept-level explanations are tied to the same computation that produces the prediction.
 
-````
+## Paper Motivation
 
----
+Legal NLP systems often operate on long, dense, high-stakes documents where transparency matters. Post-hoc explainability methods such as attribution maps or surrogate models can be useful, but they explain a trained model from the outside. LegalSENN instead makes explanation part of the architecture.
 
-## **Setup**
+The paper evaluates this idea on the LexGLUE-SCOTUS benchmark and studies:
 
-### 1. Create and activate virtual environment (macOS / Linux)
+- predictive performance on legal issue classification;
+- the effect of the concept bottleneck and additive SENN head;
+- explanation stability under sentence-level perturbations;
+- qualitative concept explanations for Fourth Amendment-style legal reasoning.
+
+In the paper experiments, the proposed SENN model achieved performance close to a Legal-BERT classifier while providing intrinsic concept-level explanations.
+
+## Repository Structure
+
+```text
+LegalSENN/
+├─ legalsenn/
+│  ├─ model.py              # LegalSENN architecture
+│  ├─ data.py               # CSV dataset and label map utilities
+│  ├─ train.py              # Training loop and evaluation artifacts
+│  ├─ inference.py          # Batch inference on CSV files
+│  ├─ inference_cli.py      # Single-document inference
+│  ├─ explain_eval.py       # Explanation deletion/stability evaluation
+│  └─ utils_reporting.py    # Reporting helpers
+│
+├─ scripts/
+│  └─ prepare_lexglue_csv.py # Convert LexGLUE datasets to CSV
+│
+├─ config/
+│  ├─ concept_names.json     # Human-readable concept names
+│  ├─ label_names.json       # Alternative label names
+│  └─ label_semantics.json   # Human-readable legal labels
+│
+├─ examples/                 # Example legal texts for inference
+├─ data/                     # Generated datasets, ignored by git
+├─ outputs/                  # Model checkpoints and reports, ignored by git
+├─ requirements.txt
+└─ README.MD
+```
+
+## Installation
+
+Create and activate a virtual environment:
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-````
+```
 
-### 2. Install dependencies
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-This installs:
+The main dependencies are:
 
-* `torch`
-* `transformers`
-* `datasets`
-* `pandas`
-* `tqdm`
+- PyTorch
+- Hugging Face Transformers
+- Hugging Face Datasets
+- pandas
+- tqdm
 
-On Apple Silicon (M1/M2/M3), PyTorch will automatically use **MPS** if available.
+## Preparing LexGLUE Data
 
----
+The project expects CSV files with two columns:
 
-## **Dataset: LexGLUE (SCOTUS Example)**
+```text
+text,label
+```
 
-This project uses **LexGLUE** via Hugging Face Datasets:
-[https://github.com/coastalcph/lex-glue](https://github.com/coastalcph/lex-glue)
-
-Prepare CSVs for a specific task (e.g., *SCOTUS*):
+To prepare the SCOTUS subset from LexGLUE:
 
 ```bash
-python prepare_lexglue_csv.py \
+python scripts/prepare_lexglue_csv.py \
   --task scotus \
   --output_dir data/lexglue_csv \
   --primary_label_only
 ```
 
-Generates:
+This creates:
 
-```
+```text
 data/lexglue_csv/scotus/train.csv
 data/lexglue_csv/scotus/val.csv
 data/lexglue_csv/scotus/test.csv
 ```
 
-Format:
+For multi-label LexGLUE tasks, the current script keeps the first label as the primary class so the data remains compatible with single-label cross-entropy training.
 
-```
-text,label
-"<full legal document text>", "0"
-"<another document>", "5"
-...
-```
+## Training
 
-For multi-label tasks (*e.g., EURLEX*), only the **first (primary) label** is used for compatibility with `CrossEntropyLoss`.
-
----
-
-## **Training LegalSENN**
-
-Example: Train on **SCOTUS** using **Legal-BERT**.
+Example training command:
 
 ```bash
-python train.py \
+python -m legalsenn.train \
   --train_csv data/lexglue_csv/scotus/train.csv \
-  --val_csv   data/lexglue_csv/scotus/val.csv \
+  --val_csv data/lexglue_csv/scotus/val.csv \
   --encoder_name nlpaueb/legal-bert-base-uncased \
-  --output_dir outputs/legal_senn_scotus \
-  --num_epochs 3 \
-  --batch_size 2 \
-  --max_length 512 \
-  --num_concepts 16
+  --output_dir outputs \
+  --run_id legal_senn_scotus \
+  --num_epochs 10 \
+  --batch_size 16 \
+  --lr 2e-5 \
+  --max_length 256 \
+  --num_concepts 16 \
+  --concept_names_path config/concept_names.json \
+  --label_semantics_path config/label_semantics.json \
+  --save_eval_artifacts
 ```
 
-During training, you will see:
+Training saves a run directory such as:
 
-* Training loss / accuracy per epoch
-* Validation loss / accuracy per epoch
-
-Best model saved as:
-
-```
-outputs/legal_senn_scotus/best_model.pt
-outputs/legal_senn_scotus/config.json
-outputs/legal_senn_scotus/label_map.json
+```text
+outputs/legal_senn_scotus/
+├─ best_model.pt
+├─ config.json
+├─ label_map.json
+├─ metrics.jsonl
+└─ epoch_*/
 ```
 
-### **MPS fallback (optional)**
+The best checkpoint is selected by validation macro-F1.
+
+The paper reports experiments with a compact concept space; this implementation exposes the number of concepts through `--num_concepts`, so it can be set to match a specific experiment.
+
+## Single-Document Inference
+
+Run prediction and faithful concept explanation for one text file:
 
 ```bash
-export PYTORCH_ENABLE_MPS_FALLBACK=1
-```
-
----
-
-## **Inference: Predicting on a User Trial**
-
-Prepare a text file:
-
-```bash
-nano my_trial.txt
-```
-
-Run inference:
-
-```bash
-python inference.py \
+python -m legalsenn.inference_cli \
   --model_dir outputs/legal_senn_scotus \
-  --text_file my_trial.txt \
-  --top_k 3
+  --text_file examples/terry_v_ohio.txt \
+  --topk_concepts 6 \
+  --label_semantics_path config/label_semantics.json \
+  --concept_names_path config/concept_names.json
 ```
 
-Output example:
+The output includes:
 
-```
-=== Top-k predicted labels ===
-3                         prob=0.7213
-5                         prob=0.1832
-1                         prob=0.0955
+- the predicted legal label;
+- prediction confidence;
+- top supporting concepts;
+- top opposing concepts;
+- each concept's additive effect on the predicted class.
 
-=== Concept contributions (SENN head) ===
-Concept 03: contribution= 2.1145
-Concept 07: contribution= 1.8733
-Concept 01: contribution=-0.4542
-...
-```
+## Batch Inference
 
-Alternatively, pass raw text:
+Run inference on a CSV split:
 
 ```bash
-python inference.py \
-  --model_dir outputs/legal_senn_scotus \
-  --text "Full text of the trial goes here..." \
-  --top_k 3
+python -m legalsenn.inference \
+  --csv data/lexglue_csv/scotus/test.csv \
+  --encoder_name nlpaueb/legal-bert-base-uncased \
+  --ckpt outputs/legal_senn_scotus/best_model.pt \
+  --label_map outputs/legal_senn_scotus/label_map.json \
+  --out_jsonl outputs/inference_predictions.jsonl \
+  --label_semantics_path config/label_semantics.json \
+  --concept_names_path config/concept_names.json
 ```
 
----
+The output JSONL contains gold labels, predicted labels, confidence scores, top-3 class probabilities, and top concept contributions when concept names are available.
 
+## Explanation Evaluation
 
-## **Ownership and License**
+The repository includes explanation evaluation utilities for:
 
-This codebase is:
+- concept deletion tests;
+- explanation stability under sentence-level perturbations;
+- summary JSON/CSV artifacts for later analysis.
 
-* **Property of**: *Nikolaos Roufas* and *Sapienza Università di Roma*
-* **Status**: *Proprietary (all rights reserved)*
+Example:
 
-**this code must not be redistributed, modified, or used commercially**
-without prior written permission.
+```bash
+python -m legalsenn.explain_eval \
+  --model_dir outputs/legal_senn_scotus \
+  --split_csv data/lexglue_csv/scotus/test.csv \
+  --encoder_name nlpaueb/legal-bert-base-uncased \
+  --label_map outputs/legal_senn_scotus/label_map.json \
+  --run_stability \
+  --run_deletion \
+  --max_points 200 \
+  --topk 6
+```
+
+Artifacts are written by default to:
+
+```text
+outputs/legal_senn_scotus/explain_eval/
+```
+
+## Notes On Generated Files
+
+The repository is configured so generated data, trained checkpoints, and experiment outputs are not committed by default:
+
+```text
+data/lexglue_csv/
+outputs/
+*.pt
+*.pth
+*.ckpt
+```
+
+This keeps the GitHub repository focused on the implementation. Recreate datasets and checkpoints locally using the commands above.
+
+## Citation
+
+If you use this repository, please cite the associated manuscript:
+
+```bibtex
+@article{roufas2026selfexplaining,
+  title  = {Self-Explaining Transformer Models for Interpretable Legal Document Classification},
+  author = {Roufas, Nikolaos and Marinacci, Matteo and Kanavos, Andreas and Mecella, Massimo},
+  year   = {2026},
+  note   = {Manuscript}
+}
+```
+
+## Ownership And License
+
+This codebase is the property of Nikolaos Roufas . Redistribution, modification, or commercial use is not permitted without prior written permission.
