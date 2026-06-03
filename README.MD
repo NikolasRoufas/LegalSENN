@@ -254,4 +254,4 @@ If you use this repository, please cite the associated manuscript:
 
 ## Ownership And License
 
-This codebase is the property of Nikolaos Roufas . Redistribution, modification, or commercial use is not permitted without prior written permission.
+This codebase is the property of Nikolaos Roufas. Redistribution, modification, or commercial use is not permitted without prior written permission.
