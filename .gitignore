@@ -40,3 +40,12 @@ outputs/
 # Hugging Face / transformers cache
 huggingface/
 .cache/
+
+# Experiment artefacts (never commit results or checkpoints)
+runs/
+results/
+cache/
+summary/
+*.npz
+*.pkl
+workdir/

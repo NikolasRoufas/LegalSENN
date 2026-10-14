@@ -1,0 +1,33 @@
+{
+  "source": "Chalkidis, Jana, Hartung, Bommarito, Androutsopoulos, Katz, Aletras. LexGLUE: A Benchmark Dataset for Legal Language Understanding in English. ACL 2022, pp. 4310-4330. arXiv:2110.00976v4 (8 Nov 2022), Table 3 (test) and Tables 5-6 (development).",
+  "retrieved": "2026-10-13 from https://arxiv.org/pdf/2110.00976 (v4) and https://github.com/coastalcph/lex-glue",
+  "task": "SCOTUS, multi-class issue-area classification, 5,000/1,400/1,400 train/dev/test; the paper's dataset table lists 14 classes (13 occur in the released splits)",
+  "protocol": {
+    "bert_family_input": "hierarchical variant: each of up to 64 paragraphs of 128 tokens encoded independently, 2-layer transformer over paragraph [CLS] vectors, max-pool, linear + softmax",
+    "longformer_bigbird_input": "up to 4096 tokens, default sparse-attention settings",
+    "optimizer": "Adam, initial learning rate 3e-5, up to 20 epochs, early stopping on development data, fp16, batch size 8",
+    "seeds_and_reporting": "five seeds; Table 3 reports the TEST score of the single seed with the best DEVELOPMENT score (not a five-seed mean)",
+    "metrics": "micro-F1 and macro-F1 (percent)"
+  },
+  "test_results_table3": {
+    "TFIDF-SVM":    {"micro_f1": 74.0, "macro_f1": 64.4},
+    "BERT":         {"micro_f1": 68.3, "macro_f1": 58.3, "input": "hierarchical 64x128"},
+    "RoBERTa":      {"micro_f1": 71.6, "macro_f1": 62.0, "input": "hierarchical 64x128"},
+    "DeBERTa":      {"micro_f1": 71.1, "macro_f1": 62.7, "input": "hierarchical 64x128"},
+    "Longformer":   {"micro_f1": 72.9, "macro_f1": 64.0, "input": "4096 tokens"},
+    "BigBird":      {"micro_f1": 72.8, "macro_f1": 62.0, "input": "4096 tokens"},
+    "Legal-BERT":   {"micro_f1": 76.4, "macro_f1": 66.5, "input": "hierarchical 64x128"},
+    "CaseLaw-BERT": {"micro_f1": 76.6, "macro_f1": 65.9, "input": "hierarchical 64x128"}
+  },
+  "development_results_tables5_6_mean_sd_top3_seeds": {
+    "Legal-BERT": {"micro_f1": "80.4 +/- 0.3", "macro_f1": "72.7 +/- 0.2"},
+    "BERT": {"micro_f1": "72.7 +/- 0.2", "macro_f1": "65.9 +/- 0.8"}
+  },
+  "appendix_d": "Hierarchical BERT (64x128) outperforms standard 512-token BERT on SCOTUS by 4.9 percentage points.",
+  "comparability_notes": [
+    "LexGLUE reports a best-development-seed test score; this study reports five-seed means and per-seed values.",
+    "Different optimiser settings (Adam 3e-5, batch 8, 20 epochs) from this study's matched protocol (AdamW 2e-5, batch 16, 10 epochs, patience 3).",
+    "LexGLUE hierarchical models segment by paragraphs; this study's hierarchical reference splits each document into consecutive 126-token chunks (+[CLS]/[SEP]).",
+    "Values are quoted for context only and are not treated as directly comparable."
+  ]
+}

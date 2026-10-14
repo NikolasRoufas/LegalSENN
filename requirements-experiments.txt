@@ -1,0 +1,15 @@
+accelerate==1.15.0
+captum==0.9.0
+datasets==5.1.0
+huggingface-hub==1.33.0
+lime==0.2.0.1
+matplotlib==3.11.2
+numpy==2.5.4
+pandas==3.0.6
+pytest==9.1.1
+scikit-learn==1.9.1
+scipy==1.18.1
+shap==0.53.0
+# torch==2.12.1 (CUDA 13.0 build): pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130
+tqdm==4.70.1
+transformers==5.12.1

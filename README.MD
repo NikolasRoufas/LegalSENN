@@ -1,243 +1,151 @@
 # LegalSENN
 
-**Self-Explaining Transformer Models for Interpretable Legal Document Classification**
+**Self-explaining (SENN-inspired) transformer models for legal document classification**
 
 This repository contains the implementation for the paper:
 
 > Nikolaos Roufas, Matteo Marinacci, Andreas Kanavos, and Massimo Mecella.
-> *Self-Explaining Transformer Models for Interpretable Legal Document Classification.*
+> *Self-Explaining Transformer Architectures for Legal Document Classification.*
 
-LegalSENN is a transformer-based legal document classifier designed to produce both predictions and concept-level explanations during the model's own forward computation. The model follows the Self-Explaining Neural Network (SENN) idea: instead of applying a post-hoc explanation method after prediction, it exposes a compact set of learned concepts and uses an additive decision mechanism to show how those concepts contribute to the final class score.
+It provides the LegalSENN model, baseline and ablation architectures, a deterministic
+training runner, and a reproducible experimental pipeline. The pipeline covers
+validation-based hyperparameter selection, multi-seed architecture comparisons, input-level
+explanation faithfulness, concept masking, fixed-window explanation stability, post-hoc
+explanation baselines (Integrated Gradients, KernelSHAP, LIME), long-document references and
+paired statistical analysis.
 
-The current implementation targets legal text classification with LexGLUE-style CSV files and includes utilities for training, batch inference, single-document inference, and explanation evaluation.
-
-## Overview
-
-LegalSENN combines:
-
-- a pretrained transformer encoder, such as `nlpaueb/legal-bert-base-uncased`;
-- a concept bottleneck layer that maps the document representation into learned concepts;
-- a relevance network that estimates concept relevance for the input document;
-- an additive classifier that produces logits from concept contributions.
-
-For an input document `x`, the model computes:
+## Architecture
 
 ```text
-z(x)  = transformer document representation
-h(x)  = concept activations
-a(x)  = concept relevances
-c(x)  = h(x) * a(x)
+z(x)   = Legal-BERT [CLS] representation (dropout 0.1)
+h(x)   = W_c z(x) + b_c                        K concept activations
+a(x)   = W_2 ReLU(W_1 z(x) + b_1) + b_2        K relevance scores
+c(x)   = h(x) ⊙ a(x)                           concept contributions
 logits = W c(x) + b
+effect_i(x, y) = W[y, i] c_i(x)                additive decomposition of logit_y
 ```
 
-The vector `c(x)` is used directly by the classifier, so concept-level explanations are tied to the same computation that produces the prediction.
+The model is trained with cross-entropy. It uses the additive concept × relevance form
+of Self-Explaining Neural Networks (Alvarez-Melis & Jaakkola, 2018) without SENN's
+robustness or concept-reconstruction regularisers, i.e. it is a SENN-inspired architecture.
 
-## Paper Motivation
+`legalsenn/model.py` provides:
 
-Legal NLP systems often operate on long, dense, high-stakes documents where transparency matters. Post-hoc explainability methods such as attribution maps or surrogate models can be useful, but they explain a trained model from the outside. LegalSENN instead makes explanation part of the architecture.
+| Class | `--arch` | Description |
+|---|---|---|
+| `LegalBertClassifier` | `bert` | Legal-BERT with a linear head |
+| `ConceptLayerClassifier` | `concept` | Legal-BERT + concept layer, no relevance network |
+| `LegalSENN` | `senn` | full SENN-inspired model |
+| `HierarchicalLegalBert` | `hier` | long-document reference (up to 64 × 128 tokens) |
 
-The paper evaluates this idea on the LexGLUE-SCOTUS benchmark and studies:
+`load_from_run(run_dir)` rebuilds the exact architecture, including the concept dimension,
+from a run's `config.json`.
 
-- predictive performance on legal issue classification;
-- the effect of the concept bottleneck and additive SENN head;
-- explanation stability under sentence-level perturbations;
-- qualitative concept explanations for Fourth Amendment-style legal reasoning.
+## Dataset
 
-In the paper experiments, the proposed SENN model achieved performance close to a Legal-BERT classifier while providing intrinsic concept-level explanations.
-
-## Repository Structure
-
-```text
-LegalSENN/
-├─ legalsenn/
-│  ├─ model.py              # LegalSENN architecture
-│  ├─ data.py               # CSV dataset and label map utilities
-│  ├─ train.py              # Training loop and evaluation artifacts
-│  ├─ inference.py          # Batch inference on CSV files
-│  ├─ inference_cli.py      # Single-document inference
-│  ├─ explain_eval.py       # Explanation deletion/stability evaluation
-│  └─ utils_reporting.py    # Reporting helpers
-│
-├─ scripts/
-│  └─ prepare_lexglue_csv.py # Convert LexGLUE datasets to CSV
-│
-├─ config/
-│  ├─ concept_names.json     # Human-readable concept names
-│  ├─ label_names.json       # Alternative label names
-│  └─ label_semantics.json   # Human-readable legal labels
-│
-├─ examples/                 # Example legal texts for inference
-├─ data/                     # Generated datasets, ignored by git
-├─ outputs/                  # Model checkpoints and reports, ignored by git
-├─ requirements.txt
-└─ README.MD
-```
+LexGLUE-SCOTUS (`coastalcph/lex_glue`, `scotus`): 13 US Supreme Court issue-area classes with
+the official chronological train / validation / test splits. Dataset and encoder revisions are
+pinned in `legalsenn/scotus.py`. Issue-area names are in `config/scotus_issue_areas.json`.
 
 ## Installation
 
-Create and activate a virtual environment:
-
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install torch==2.12.1 --index-url https://download.pytorch.org/whl/cu130   # choose the build for your CUDA
+pip install -r requirements-experiments.txt
+python -m pytest -q tests/
 ```
 
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-The main dependencies are:
-
-- PyTorch
-- Hugging Face Transformers
-- Hugging Face Datasets
-- pandas
-- tqdm
-
-## Preparing LexGLUE Data
-
-The project expects CSV files with two columns:
-
-```text
-text,label
-```
-
-To prepare the SCOTUS subset from LexGLUE:
-
-```bash
-python scripts/prepare_lexglue_csv.py \
-  --task scotus \
-  --output_dir data/lexglue_csv \
-  --primary_label_only
-```
-
-This creates:
-
-```text
-data/lexglue_csv/scotus/train.csv
-data/lexglue_csv/scotus/val.csv
-data/lexglue_csv/scotus/test.csv
-```
-
-For multi-label LexGLUE tasks, the current script keeps the first label as the primary class so the data remains compatible with single-label cross-entropy training.
+`requirements.txt` keeps the minimal dependency list of the original release.
 
 ## Training
 
-Example training command:
-
 ```bash
-python -m legalsenn.train \
-  --train_csv data/lexglue_csv/scotus/train.csv \
-  --val_csv data/lexglue_csv/scotus/val.csv \
-  --encoder_name nlpaueb/legal-bert-base-uncased \
-  --output_dir outputs \
-  --run_id legal_senn_scotus \
-  --num_epochs 10 \
-  --batch_size 16 \
-  --lr 2e-5 \
-  --max_length 256 \
-  --num_concepts 16 \
-  --concept_names_path config/concept_names.json \
-  --label_semantics_path config/label_semantics.json \
-  --save_eval_artifacts
+export HF_HOME=/path/to/hf_cache PYTHONPATH=$PWD
+python -m legalsenn.run_train --arch senn --num_concepts 32 --max_length 256 --seed 13 \
+    --run_dir runs/senn_K32_L256_s13 --cache_dir cache
 ```
 
-Training saves a run directory such as:
+- **Defaults:** AdamW at lr 2e-5, batch 16, at most 10 epochs, early stopping (patience 3) on
+  validation Macro-F1, and the best validation checkpoint retained.
+- **Test evaluation:** runs once, after training, and is written separately from the
+  validation results.
+- **Determinism:** seeded runs are deterministic on a given GPU and software stack.
+
+The original CSV-based entry points are still available:
+
+```bash
+python scripts/prepare_lexglue_csv.py --task scotus --output_dir data/lexglue_csv --primary_label_only
+python -m legalsenn.train --train_csv data/lexglue_csv/scotus/train.csv --val_csv data/lexglue_csv/scotus/val.csv \
+    --encoder_name nlpaueb/legal-bert-base-uncased --num_epochs 10 --batch_size 16 --lr 2e-5 \
+    --max_length 256 --num_concepts 32 --output_dir outputs --run_id legal_senn_scotus
+```
+
+## Inference
+
+```bash
+python -m legalsenn.inference_cli --model_dir outputs/legal_senn_scotus \
+    --text_file examples/terry_v_ohio.txt --topk_concepts 6 \
+    --label_semantics_path config/scotus_issue_areas.json --concept_names_path config/concept_names.json
+```
+
+The original inference tools infer K from the concept-name file. For other concept
+dimensions, load models with `legalsenn.model.load_from_run`.
+
+## Experimental pipeline
+
+```bash
+export HF_HOME=/path/to/hf_cache PYTHONPATH=$PWD LEGALSENN_COMMIT=$(git rev-parse HEAD)
+python -m experiments.length_stats --cache_dir ROOT/cache --out ROOT/results/long_context
+python -m experiments.pipeline --root ROOT --parallel 2      # resumable
+python -m experiments.aggregate --root ROOT --out ROOT/summary
+```
+
+| Stage | Code |
+|---|---|
+| Hyperparameter selection (K, then L) on validation Macro-F1 only | `experiments/select_hparams.py` |
+| Five-seed comparison of `bert`, `concept`, `senn` | `experiments/pipeline.py`, `experiments/make_jobs.py` |
+| Concept masking (top/bottom/random sets, all-class logits, gauge check) | `experiments/masking.py`, `experiments/masking_hypotheses.py` |
+| Input-level faithfulness (comprehensiveness, sufficiency, random/bottom controls, flips) | `experiments/explain_suite.py`, `legalsenn/explanations.py` |
+| Fixed-window sentence-removal stability; legacy protocol for comparison | `legalsenn/windows.py`, `experiments/explain_suite.py` |
+| Integrated Gradients, KernelSHAP, LIME in a shared sentence-level space | `legalsenn/explanations.py` |
+| Concept concentration (Top-6 absolute effect share) | `experiments/concentration.py` |
+| Document-length analysis, Legal-BERT 512, hierarchical Legal-BERT | `experiments/length_stats.py`, `legalsenn/model.py` |
+| Paired statistics (t-CI, paired t, exact Wilcoxon, d_z, Holm, bootstrap) | `legalsenn/statistics.py` |
+| Result tables and figures from stored outputs | `experiments/aggregate.py` |
+
+See [docs/EXPERIMENTAL_PROTOCOL.md](docs/EXPERIMENTAL_PROTOCOL.md) and
+[docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md).
+
+## Tests
+
+`tests/test_pipeline.py` checks:
+- exact logit reconstruction and effect computation;
+- model dimensions, gradient updates and dropout behaviour;
+- checkpoint reconstruction;
+- ranking and masking logic;
+- Jaccard and its exact chance level;
+- fixed-window perturbation invariants and exact rationale budgets;
+- comprehensiveness and sufficiency;
+- paired statistics, seed matching and validation-only selection.
+
+```bash
+python -m pytest -q tests/
+```
+
+## Repository structure
 
 ```text
-outputs/legal_senn_scotus/
-├─ best_model.pt
-├─ config.json
-├─ label_map.json
-├─ metrics.jsonl
-└─ epoch_*/
+legalsenn/      models, data, training, fixed-window utilities, explanation engine, statistics
+experiments/    pipeline, selection, masking, explanation suite, long-document analysis, aggregation
+tests/          automated checks
+config/         label and concept-name files
+scripts/        LexGLUE CSV preparation
+docs/           experimental protocol and reproduction guide
+examples/       example texts for inference
 ```
 
-The best checkpoint is selected by validation macro-F1.
-
-The paper reports experiments with a compact concept space; this implementation exposes the number of concepts through `--num_concepts`, so it can be set to match a specific experiment.
-
-## Single-Document Inference
-
-Run prediction and faithful concept explanation for one text file:
-
-```bash
-python -m legalsenn.inference_cli \
-  --model_dir outputs/legal_senn_scotus \
-  --text_file examples/terry_v_ohio.txt \
-  --topk_concepts 6 \
-  --label_semantics_path config/label_semantics.json \
-  --concept_names_path config/concept_names.json
-```
-
-The output includes:
-
-- the predicted legal label;
-- prediction confidence;
-- top supporting concepts;
-- top opposing concepts;
-- each concept's additive effect on the predicted class.
-
-## Batch Inference
-
-Run inference on a CSV split:
-
-```bash
-python -m legalsenn.inference \
-  --csv data/lexglue_csv/scotus/test.csv \
-  --encoder_name nlpaueb/legal-bert-base-uncased \
-  --ckpt outputs/legal_senn_scotus/best_model.pt \
-  --label_map outputs/legal_senn_scotus/label_map.json \
-  --out_jsonl outputs/inference_predictions.jsonl \
-  --label_semantics_path config/label_semantics.json \
-  --concept_names_path config/concept_names.json
-```
-
-The output JSONL contains gold labels, predicted labels, confidence scores, top-3 class probabilities, and top concept contributions when concept names are available.
-
-## Explanation Evaluation
-
-The repository includes explanation evaluation utilities for:
-
-- concept deletion tests;
-- explanation stability under sentence-level perturbations;
-- summary JSON/CSV artifacts for later analysis.
-
-Example:
-
-```bash
-python -m legalsenn.explain_eval \
-  --model_dir outputs/legal_senn_scotus \
-  --split_csv data/lexglue_csv/scotus/test.csv \
-  --encoder_name nlpaueb/legal-bert-base-uncased \
-  --label_map outputs/legal_senn_scotus/label_map.json \
-  --run_stability \
-  --run_deletion \
-  --max_points 200 \
-  --topk 6
-```
-
-Artifacts are written by default to:
-
-```text
-outputs/legal_senn_scotus/explain_eval/
-```
-
-## Notes On Generated Files
-
-The repository is configured so generated data, trained checkpoints, and experiment outputs are not committed by default:
-
-```text
-data/lexglue_csv/
-outputs/
-*.pt
-*.pth
-*.ckpt
-```
-
-This keeps the GitHub repository focused on the implementation. Recreate datasets and checkpoints locally using the commands above.
+Checkpoints and datasets are not stored in the repository.
 
 ## Citation
 
